@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lọc dữ liệu trùng Excel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#1c2430; --muted:#667085; --line:#e4e7ec;
+    --accent:#1a7f5a; --accent-d:#14664766; --accent-ink:#fff; --warn:#b54708; --warn-bg:#fff4e5; --err:#b42318; --err-bg:#fef3f2;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#14181f; --card:#1d232d; --ink:#e8ecf2; --muted:#98a2b3; --line:#2f3745; --accent:#34b384; --accent-ink:#0b1a13; --warn-bg:#3a2a12; --warn:#f5b461; --err-bg:#3a1a17; --err:#f97066; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:920px;margin:0 auto;padding:24px 16px 64px}
+  h1{font-size:1.5rem;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+  .card h2{font-size:1rem;margin:0 0 12px;display:flex;gap:10px;align-items:center}
+  .num{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:.85rem;font-weight:700}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;transition:.15s}
+  .drop:hover,.drop.over{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,transparent)}
+  .drop b{display:block;margin-bottom:4px}
+  .drop span{color:var(--muted);font-size:.9rem}
+  input[type=file]{display:none}
+  .fileinfo{margin-top:10px;color:var(--muted);font-size:.92rem}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  label.f{display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--muted)}
+  select,input[type=search]{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:180px}
+  .cols{display:flex;flex-wrap:wrap;gap:8px;max-height:260px;overflow:auto;padding:2px;margin-top:10px}
+  .chip{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:.92rem;cursor:pointer}
+  .chip:hover{border-color:var(--accent)}
+  .chip.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+  .chip small{opacity:.6;margin-right:4px}
+  .opts{display:flex;flex-wrap:wrap;gap:6px 20px;margin:14px 0}
+  .opts label{display:flex;gap:8px;align-items:center;font-size:.93rem;cursor:pointer}
+  button.primary{background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:11px 20px;font:inherit;font-weight:600;cursor:pointer}
+  button.primary:disabled{opacity:.45;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px 16px;font:inherit;cursor:pointer}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+  .stat{background:var(--bg);border-radius:8px;padding:10px 12px}
+  .stat b{display:block;font-size:1.35rem}
+  .stat span{color:var(--muted);font-size:.85rem}
+  .msg{padding:10px 12px;border-radius:8px;font-size:.93rem;margin-top:10px}
+  .msg.warn{background:var(--warn-bg);color:var(--warn)}
+  .msg.err{background:var(--err-bg);color:var(--err)}
+  .msg.ok{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--ink)}
+  .tw{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:8px;margin-top:10px}
+  table{border-collapse:collapse;font-size:.85rem;width:max-content;min-width:100%}
+  th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+  th{position:sticky;top:0;background:var(--bg);z-index:1}
+  th.key,td.key{background:color-mix(in srgb,var(--accent) 14%,var(--card));font-weight:600}
+  tr.g1 td{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+  .hidden{display:none!important}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  .busy{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Lọc dữ liệu trùng trong Excel</h1>
+  <p class="sub">Tải file Excel lên, chọn cột cần kiểm tra, trang sẽ lấy ra các hàng có giá trị trùng nhau và xuất thành file Excel mới. Dữ liệu được xử lý ngay trên máy của bạn, không gửi đi đâu.</p>
+
+  <section class="card">
+    <h2><span class="num">1</span> Tải file Excel lên</h2>
+    <div class="drop" id="drop" tabindex="0" role="button">
+      <b>Bấm để chọn file hoặc kéo thả vào đây</b>
+      <span>Hỗ trợ .xlsx, .xls, .csv</span>
+    </div>
+    <input type="file" id="file" accept=".xlsx,.xls,.xlsm,.csv">
+    <div class="fileinfo" id="fileinfo"></div>
+    <div id="loadMsg"></div>
+  </section>
+
+  <section class="card hidden" id="step2">
+    <h2><span class="num">2</span> Chọn cột cần lọc trùng</h2>
+    <div class="row">
+      <label class="f hidden" id="sheetWrap">Trang tính (sheet)
+        <select id="sheet"></select>
+      </label>
+      <label class="f">Dòng tiêu đề nằm ở hàng số
+        <select id="hdr"></select>
+      </label>
+      <label class="f" style="flex:1;min-width:200px">Tìm tên cột
+        <input type="search" id="q" placeholder="Gõ để lọc danh sách cột…">
+      </label>
+    </div>
+    <div class="cols" id="cols"></div>
+    <div class="opts">
+      <label><input type="checkbox" id="optCase" checked> Không phân biệt hoa/thường</label>
+      <label><input type="checkbox" id="optTrim" checked> Bỏ khoảng trắng thừa</label>
+      <label><input type="checkbox" id="optBlank" checked> Bỏ qua ô trống</label>
+      <label><input type="checkbox" id="optExtra"> Thêm cột “Nhóm trùng” và “Số lần lặp” vào file xuất</label>
+    </div>
+    <button class="primary" id="run" disabled>Lọc dữ liệu trùng</button>
+  </section>
+
+  <section class="card hidden" id="step3">
+    <h2><span class="num">3</span> Kết quả</h2>
+    <div class="stats" id="stats"></div>
+    <div id="resMsg"></div>
+    <div class="tw hidden" id="prevWrap"><table id="prev"></table></div>
+    <div class="actions">
+      <button class="primary" id="save" disabled>Lưu file Excel mới</button>
+    </div>
+    <div id="saveMsg"></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  let wb = null, fileName = '', rows = [], hdrIdx = 0, headers = [], selCol = -1, result = null, downloads = null;
+
+  // Tính năng lưu file (có thể không có ở một số môi trường)
+  try { claude.use('downloads').then(d => { downloads = d; }).catch(()=>{}); } catch(e){}
+
+  const drop = $('drop'), fileInput = $('file');
+  drop.addEventListener('click', () => fileInput.click());
+  drop.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); fileInput.click(); }});
+  ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+
+  function msg(el, cls, text){ el.innerHTML = text ? '<div class="msg '+cls+'"></div>' : ''; if (text) el.firstChild.textContent = text; }
+
+  function loadFile(f){
+    msg($('loadMsg'),'',''); $('step2').classList.add('hidden'); $('step3').classList.add('hidden');
+    if (typeof XLSX === 'undefined'){ msg($('loadMsg'),'err','Không tải được thư viện đọc Excel. Hãy kiểm tra kết nối mạng rồi tải lại trang.'); return; }
+    fileName = f.name;
+    $('fileinfo').textContent = 'Đang đọc “' + f.name + '” (' + (f.size/1024/1024).toFixed(2) + ' MB)…';
+    const r = new FileReader();
+    r.onload = () => {
+      setTimeout(() => {
+        try {
+          wb = XLSX.read(new Uint8Array(r.result), {type:'array', cellDates:true});
+        } catch(e){ msg($('loadMsg'),'err','Không đọc được file này. Hãy kiểm tra file có đúng định dạng Excel/CSV không.'); $('fileinfo').textContent=''; return; }
+        if (!wb.SheetNames.length){ msg($('loadMsg'),'err','File không có trang tính nào.'); return; }
+        const sel = $('sheet'); sel.innerHTML = '';
+        wb.SheetNames.forEach((n,i) => { const o = document.createElement('option'); o.value = i; o.textContent = n; sel.appendChild(o); });
+        $('sheetWrap').classList.toggle('hidden', wb.SheetNames.length < 2);
+        loadSheet();
+        $('step2').classList.remove('hidden');
+      }, 30);
+    };
+    r.onerror = () => msg($('loadMsg'),'err','Không đọc được file.');
+    r.readAsArrayBuffer(f);
+  }
+
+  function loadSheet(){
+    const ws = wb.Sheets[wb.SheetNames[+$('sheet').value]];
+    rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:'', blankrows:false});
+    const hs = $('hdr'); hs.innerHTML = '';
+    const maxH = Math.min(10, Math.max(rows.length,1));
+    for (let i=1;i<=maxH;i++){ const o = document.createElement('option'); o.value=i-1; o.textContent=i; hs.appendChild(o); }
+    hs.value = 0;
+    applyHeader();
+  }
+
+  function applyHeader(){
+    hdrIdx = +$('hdr').value;
+    const dataRows = Math.max(rows.length - hdrIdx - 1, 0);
+    const hr = rows[hdrIdx] || [];
+    let width = hr.length;
+    for (let i=hdrIdx+1;i<rows.length;i++) if (rows[i].length > width) width = rows[i].length;
+    headers = [];
+    const seen = {};
+    for (let c=0;c<width;c++){
+      let h = hr[c]; h = (h===undefined||h===null) ? '' : String(h).trim();
+      if (!h) h = 'Cột ' + (c+1);
+      if (seen[h]) { seen[h]++; h = h + ' (' + seen[h] + ')'; } else seen[h] = 1;
+      headers.push(h);
+    }
+    selCol = -1; $('run').disabled = true;
+    $('fileinfo').textContent = '“' + fileName + '”: ' + dataRows.toLocaleString('vi-VN') + ' hàng dữ liệu, ' + headers.length + ' cột.';
+    if (!dataRows) msg($('loadMsg'),'warn','Trang tính này không có dữ liệu bên dưới dòng tiêu đề.'); else msg($('loadMsg'),'','');
+    renderCols();
+  }
+
+  function renderCols(){
+    const q = $('q').value.trim().toLowerCase();
+    const box = $('cols'); box.innerHTML = '';
+    let n = 0;
+    headers.forEach((h,i) => {
+      if (q && !h.toLowerCase().includes(q)) return;
+      n++;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip' + (i===selCol ? ' sel':'');
+      const s = document.createElement('small'); s.textContent = colName(i);
+      b.appendChild(s); b.appendChild(document.createTextNode(h));
+      b.onclick = () => { selCol = i; $('run').disabled = false; renderCols(); };
+      box.appendChild(b);
+    });
+    if (!n) box.innerHTML = '<span class="busy">Không có cột nào khớp.</span>';
+  }
+  function colName(i){ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26);} return s; }
+
+  $('sheet').addEventListener('change', loadSheet);
+  $('hdr').addEventListener('change', applyHeader);
+  $('q').addEventListener('input', renderCols);
+
+  function keyOf(v){
+    if (v===undefined||v===null) return '';
+    if (v instanceof Date) return isNaN(v) ? '' : v.toISOString();
+    let s = String(v);
+    if ($('optTrim').checked) s = s.replace(/\s+/g,' ').trim();
+    if ($('optCase').checked) s = s.toLocaleLowerCase('vi');
+    return s;
+  }
+
+  $('run').addEventListener('click', () => {
+    if (selCol < 0) return;
+    const skipBlank = $('optBlank').checked, extra = $('optExtra').checked;
+    const groups = new Map(); // key -> array of row indexes
+    let total = 0, blanks = 0;
+    for (let i=hdrIdx+1;i<rows.length;i++){
+      total++;
+      const k = keyOf(rows[i][selCol]);
+      if (k==='' && skipBlank){ blanks++; continue; }
+      const g = groups.get(k); if (g) g.push(i); else groups.set(k,[i]);
+    }
+    const dupGroups = [];
+    groups.forEach((idxs,k) => { if (idxs.length > 1) dupGroups.push(idxs); });
+    const out = [];
+    let gno = 0, dupRows = 0;
+    const head = headers.slice();
+    if (extra){ head.push('Nhóm trùng','Số lần lặp'); }
+    out.push(head);
+    dupGroups.forEach(idxs => {
+      gno++;
+      idxs.forEach(i => {
+        const r = [];
+        for (let c=0;c<headers.length;c++) r.push(rows[i][c] === undefined ? '' : rows[i][c]);
+        if (extra){ r.push(gno, idxs.length); }
+        out.push(r); dupRows++;
+      });
+    });
+    result = {aoa: out, groups: dupGroups.length, dupRows, total, blanks, unique: groups.size - dupGroups.length};
+    showResult();
+  });
+
+  function showResult(){
+    const R = result, f = n => n.toLocaleString('vi-VN');
+    $('step3').classList.remove('hidden');
+    $('stats').innerHTML = '';
+    [[f(R.total),'Tổng số hàng dữ liệu'],[f(R.groups),'Số giá trị bị trùng'],[f(R.dupRows),'Số hàng trùng được xuất'],[f(R.blanks),'Ô trống bị bỏ qua']].forEach(([a,b]) => {
+      const d = document.createElement('div'); d.className='stat'; d.innerHTML='<b></b><span></span>'; d.firstChild.textContent=a; d.lastChild.textContent=b; $('stats').appendChild(d);
+    });
+    const prev = $('prev'); prev.innerHTML = '';
+    if (!R.dupRows){
+      $('prevWrap').classList.add('hidden');
+      $('save').disabled = true;
+      msg($('resMsg'),'ok','Không tìm thấy giá trị nào trùng nhau trong cột “' + headers[selCol] + '”.');
+      msg($('saveMsg'),'','');
+      $('step3').scrollIntoView({behavior:'smooth'});
+      return;
+    }
+    msg($('resMsg'),'ok','Cột “' + headers[selCol] + '” có ' + f(R.groups) + ' giá trị bị lặp, tương ứng ' + f(R.dupRows) + ' hàng. Các hàng trùng nhau được xếp liền kề nhau trong file xuất.');
+    const LIMIT = 200;
+    const thead = prev.createTHead().insertRow();
+    R.aoa[0].forEach((h,c) => { const th = document.createElement('th'); th.textContent = h; if (c===selCol) th.className='key'; thead.appendChild(th); });
+    const tb = prev.createTBody();
+    let gi = 0, last = null;
+    const showExtra = $('optExtra').checked;
+    for (let i=1;i<Math.min(R.aoa.length, LIMIT+1);i++){
+      const tr = tb.insertRow();
+      const gval = showExtra ? R.aoa[i][headers.length] : keyOf(R.aoa[i][selCol]);
+      if (gval !== last){ gi++; last = gval; }
+      if (gi % 2 === 0) tr.className = 'g1';
+      R.aoa[i].forEach((v,c) => {
+        const td = tr.insertCell();
+        td.textContent = v instanceof Date ? v.toLocaleDateString('vi-VN') : v;
+        if (c===selCol) td.className='key';
+      });
+    }
+    $('prevWrap').classList.remove('hidden');
+    if (R.aoa.length-1 > LIMIT) $('resMsg').firstChild.textContent += ' (Bảng dưới chỉ xem trước ' + LIMIT + ' hàng đầu; file xuất có đủ.)';
+    $('save').disabled = false;
+    msg($('saveMsg'),'','');
+    $('step3').scrollIntoView({behavior:'smooth'});
+  }
+
+  $('save').addEventListener('click', async () => {
+    if (!result || !result.dupRows) return;
+    try {
+      const ws = XLSX.utils.aoa_to_sheet(result.aoa, {cellDates:true});
+      ws['!cols'] = result.aoa[0].map((h,c) => ({wch: Math.min(40, Math.max(10, String(h).length + 2))}));
+      ws['!freeze'] = {xSplit:0, ySplit:1};
+      const out = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(out, ws, 'Du lieu trung');
+      const buf = XLSX.write(out, {bookType:'xlsx', type:'array'});
+      const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      const base = fileName.replace(/\.[^.]+$/,'');
+      const name = base + '_trung.xlsx';
+      if (!downloads){
+        // Thử lại một lần: capability có thể phản hồi chậm
+        try { downloads = await claude.use('downloads'); } catch(e){}
+      }
+      if (downloads){
+        await downloads.save({filename:name, data:blob});
+        msg($('saveMsg'),'ok','Đã lưu file “' + name + '”.');
+      } else {
+        // Dự phòng khi mở trang ngoài khung của Claude
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        msg($('saveMsg'),'ok','Đã tạo file “' + name + '”. Nếu trình duyệt không tự tải, hãy mở trang này ở tab riêng rồi thử lại.');
+      }
+    } catch(e){
+      if (e && e.code === 'declined') msg($('saveMsg'),'warn','Bạn đã hủy việc lưu file. Bấm lại nếu muốn lưu.');
+      else msg($('saveMsg'),'err','Không lưu được file' + (e && e.message ? ': ' + e.message : '.'));
+    }
+  });
+})();
+</script>
+</body>
+</html>
