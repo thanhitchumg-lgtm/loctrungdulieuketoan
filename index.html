@@ -76,7 +76,7 @@
   </section>
 
   <section class="card hidden" id="step2">
-    <h2><span class="num">2</span> Chọn cột cần lọc trùng</h2>
+    <h2><span class="num">2</span> Chọn một hoặc nhiều cột cần lọc trùng</h2>
     <div class="row">
       <label class="f hidden" id="sheetWrap">Trang tính (sheet)
         <select id="sheet"></select>
@@ -89,10 +89,11 @@
       </label>
     </div>
     <div class="cols" id="cols"></div>
+    <div class="fileinfo" id="selInfo"></div>
     <div class="opts">
       <label><input type="checkbox" id="optCase" checked> Không phân biệt hoa/thường</label>
       <label><input type="checkbox" id="optTrim" checked> Bỏ khoảng trắng thừa</label>
-      <label><input type="checkbox" id="optBlank" checked> Bỏ qua ô trống</label>
+      <label><input type="checkbox" id="optBlank" checked> Bỏ qua hàng có ô trống ở cột đã chọn</label>
       <label><input type="checkbox" id="optExtra"> Thêm cột “Nhóm trùng” và “Số lần lặp” vào file xuất</label>
     </div>
     <button class="primary" id="run" disabled>Lọc dữ liệu trùng</button>
@@ -113,7 +114,7 @@
 <script>
 (function(){
   const $ = id => document.getElementById(id);
-  let wb = null, fileName = '', rows = [], hdrIdx = 0, headers = [], selCol = -1, result = null, downloads = null;
+  let wb = null, fileName = '', rows = [], hdrIdx = 0, headers = [], selCols = [], result = null, downloads = null;
 
   // Tính năng lưu file (có thể không có ở một số môi trường)
   try { claude.use('downloads').then(d => { downloads = d; }).catch(()=>{}); } catch(e){}
@@ -175,10 +176,10 @@
       if (seen[h]) { seen[h]++; h = h + ' (' + seen[h] + ')'; } else seen[h] = 1;
       headers.push(h);
     }
-    selCol = -1; $('run').disabled = true;
+    selCols = []; $('run').disabled = true;
     $('fileinfo').textContent = '“' + fileName + '”: ' + dataRows.toLocaleString('vi-VN') + ' hàng dữ liệu, ' + headers.length + ' cột.';
     if (!dataRows) msg($('loadMsg'),'warn','Trang tính này không có dữ liệu bên dưới dòng tiêu đề.'); else msg($('loadMsg'),'','');
-    renderCols();
+    renderSel(); renderCols();
   }
 
   function renderCols(){
@@ -189,13 +190,25 @@
       if (q && !h.toLowerCase().includes(q)) return;
       n++;
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'chip' + (i===selCol ? ' sel':'');
+      b.type = 'button'; b.className = 'chip' + (selCols.includes(i) ? ' sel':'');
       const s = document.createElement('small'); s.textContent = colName(i);
       b.appendChild(s); b.appendChild(document.createTextNode(h));
-      b.onclick = () => { selCol = i; $('run').disabled = false; renderCols(); };
+      b.onclick = () => {
+        const p = selCols.indexOf(i);
+        if (p >= 0) selCols.splice(p,1); else selCols.push(i);
+        selCols.sort((a,b) => a-b);
+        $('run').disabled = !selCols.length;
+        renderSel(); renderCols();
+      };
       box.appendChild(b);
     });
     if (!n) box.innerHTML = '<span class="busy">Không có cột nào khớp.</span>';
+  }
+  function selNames(){ return selCols.map(c => '“' + headers[c] + '”').join(' + '); }
+  function renderSel(){
+    $('selInfo').textContent = selCols.length
+      ? 'Đã chọn ' + selCols.length + ' cột: ' + selNames() + (selCols.length > 1 ? ' — chỉ coi là trùng khi tất cả các cột này đều giống nhau.' : '')
+      : 'Chưa chọn cột nào.';
   }
   function colName(i){ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26);} return s; }
 
@@ -213,14 +226,15 @@
   }
 
   $('run').addEventListener('click', () => {
-    if (selCol < 0) return;
+    if (!selCols.length) return;
     const skipBlank = $('optBlank').checked, extra = $('optExtra').checked;
     const groups = new Map(); // key -> array of row indexes
     let total = 0, blanks = 0;
     for (let i=hdrIdx+1;i<rows.length;i++){
       total++;
-      const k = keyOf(rows[i][selCol]);
-      if (k==='' && skipBlank){ blanks++; continue; }
+      const parts = selCols.map(c => keyOf(rows[i][c]));
+      if (skipBlank && parts.some(p => p==='')){ blanks++; continue; }
+      const k = parts.join('\u0001');
       const g = groups.get(k); if (g) g.push(i); else groups.set(k,[i]);
     }
     const dupGroups = [];
@@ -247,34 +261,34 @@
     const R = result, f = n => n.toLocaleString('vi-VN');
     $('step3').classList.remove('hidden');
     $('stats').innerHTML = '';
-    [[f(R.total),'Tổng số hàng dữ liệu'],[f(R.groups),'Số giá trị bị trùng'],[f(R.dupRows),'Số hàng trùng được xuất'],[f(R.blanks),'Ô trống bị bỏ qua']].forEach(([a,b]) => {
+    [[f(R.total),'Tổng số hàng dữ liệu'],[f(R.groups),'Số nhóm bị trùng'],[f(R.dupRows),'Số hàng trùng được xuất'],[f(R.blanks),'Hàng trống bị bỏ qua']].forEach(([a,b]) => {
       const d = document.createElement('div'); d.className='stat'; d.innerHTML='<b></b><span></span>'; d.firstChild.textContent=a; d.lastChild.textContent=b; $('stats').appendChild(d);
     });
     const prev = $('prev'); prev.innerHTML = '';
     if (!R.dupRows){
       $('prevWrap').classList.add('hidden');
       $('save').disabled = true;
-      msg($('resMsg'),'ok','Không tìm thấy giá trị nào trùng nhau trong cột “' + headers[selCol] + '”.');
+      msg($('resMsg'),'ok','Không tìm thấy hàng nào trùng nhau theo ' + (selCols.length>1 ? 'tổ hợp các cột ' : 'cột ') + selNames() + '.');
       msg($('saveMsg'),'','');
       $('step3').scrollIntoView({behavior:'smooth'});
       return;
     }
-    msg($('resMsg'),'ok','Cột “' + headers[selCol] + '” có ' + f(R.groups) + ' giá trị bị lặp, tương ứng ' + f(R.dupRows) + ' hàng. Các hàng trùng nhau được xếp liền kề nhau trong file xuất.');
+    msg($('resMsg'),'ok',(selCols.length>1 ? 'Theo tổ hợp các cột ' : 'Cột ') + selNames() + ' có ' + f(R.groups) + ' nhóm bị lặp, tương ứng ' + f(R.dupRows) + ' hàng. Các hàng trùng nhau được xếp liền kề nhau trong file xuất.');
     const LIMIT = 200;
     const thead = prev.createTHead().insertRow();
-    R.aoa[0].forEach((h,c) => { const th = document.createElement('th'); th.textContent = h; if (c===selCol) th.className='key'; thead.appendChild(th); });
+    R.aoa[0].forEach((h,c) => { const th = document.createElement('th'); th.textContent = h; if (selCols.includes(c)) th.className='key'; thead.appendChild(th); });
     const tb = prev.createTBody();
     let gi = 0, last = null;
     const showExtra = $('optExtra').checked;
     for (let i=1;i<Math.min(R.aoa.length, LIMIT+1);i++){
       const tr = tb.insertRow();
-      const gval = showExtra ? R.aoa[i][headers.length] : keyOf(R.aoa[i][selCol]);
+      const gval = showExtra ? R.aoa[i][headers.length] : selCols.map(c => keyOf(R.aoa[i][c])).join('\u0001');
       if (gval !== last){ gi++; last = gval; }
       if (gi % 2 === 0) tr.className = 'g1';
       R.aoa[i].forEach((v,c) => {
         const td = tr.insertCell();
         td.textContent = v instanceof Date ? v.toLocaleDateString('vi-VN') : v;
-        if (c===selCol) td.className='key';
+        if (selCols.includes(c)) td.className='key';
       });
     }
     $('prevWrap').classList.remove('hidden');
